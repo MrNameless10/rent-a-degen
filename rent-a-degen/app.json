@@ -1,11 +1,11 @@
 {
   "id": "rent-a-degen",
-  "name": "RENT-A-DEGEN",
-  "version": "0.1.0",
+  "name": "RENT A DEGEN",
+  "version": "0.1.1",
   "author": "MrNameless10",
   "summary": "Sell timed control of your badge for !LAMPs.",
-  "icon": "shuffle",
-  "accent": "9945FF",
+  "icon": "home",
+  "accent": "ACFF9B",
   "category": "social",
   "permissions": ["led", "mesh", "lamps", "wifi"]
 }
