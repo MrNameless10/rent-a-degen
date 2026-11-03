@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rent-a-Degen Emulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --page: #000; --ink: #f2f2f4; --muted: #9b9ba6; --line: #1d1d22; --card: #0b0b0e; --mono: "JetBrains Mono", ui-monospace, Menlo, monospace; }
+  * { box-sizing: border-box; }
+  html, body { background: var(--page); }
+  body { margin: 0; color: var(--ink); font: 15px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; min-height: 100vh;
+    background: radial-gradient(900px 520px at 12% -8%, rgba(153, 69, 255, .18), transparent 60%),
+                radial-gradient(760px 520px at 88% 24%, rgba(20, 241, 149, .09), transparent 60%), var(--page); }
+  header { max-width: 1240px; margin: 0 auto; padding: 40px 16px 4px; }
+  .eyebrow { font: 500 12px var(--mono); letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
+  h1 { margin: 12px 0; font-size: clamp(30px, 4.6vw, 46px); line-height: 1.08; font-weight: 500; letter-spacing: -.025em; }
+  h1 span { background: linear-gradient(90deg, #9945ff, #19fbe3 62%, #14f195); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  header p { margin: 0; max-width: 760px; color: #c8c8d0; }
+  kbd { font: 500 11px var(--mono); border: 1px solid #34343c; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: #111114; color: var(--ink); }
+  main { max-width: 1240px; margin: 0 auto; padding: 26px 16px 48px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px 24px; justify-items: center; }
+  #boot { grid-column: 1 / -1; padding: 80px 0; color: var(--muted); font: 13px var(--mono); }
+  .rig { width: 100%; max-width: 400px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .who { font: 500 12px var(--mono); color: var(--muted); letter-spacing: .04em; }
+  .who b { color: var(--ink); font-weight: 500; }
+  svg.board { width: 100%; height: auto; display: block; cursor: pointer; user-select: none; -webkit-user-select: none; }
+  svg.board .edge { transition: stroke .2s; }
+  svg.board.focus .edge { stroke: #14f195; }
+  svg.board .btn:hover .cap { fill: #24242a; }
+  svg.board .btn.down .cap, svg.board .btn:active .cap { fill: #14f195; }
+  svg.board .led { transition: fill .04s; }
+  canvas.lcd { width: 320px; height: 240px; display: block; image-rendering: auto; }
+  .tools { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .tools button, .tools label { background: #0d0d10; color: #d2d2da; border: 1px solid #26262d; border-radius: 999px; padding: 7px 16px; font: 500 12px var(--mono); cursor: pointer; display: inline-flex; gap: 8px; align-items: center; }
+  .tools button:hover, .tools label:hover { border-color: #3a3a44; color: #fff; }
+  .tools input { accent-color: #14f195; margin: 0; }
+  section.console { grid-column: 1 / -1; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  section.console h2 { margin: 0; padding: 12px 16px; font: 500 11px var(--mono); color: var(--muted); letter-spacing: .14em; text-transform: uppercase; border-bottom: 1px solid var(--line); }
+  #log { height: 220px; overflow: auto; padding: 10px 16px; font: 400 11.5px/1.6 var(--mono); color: #a8e8c8; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <div class="eyebrow">Rent-a-Degen · simulated Solana OS · WebAssembly</div>
+  <h1><span>Rent a degen</span> in your browser</h1>
+  <p>The real app runs in Lua 5.4 (WebAssembly) on a simulated Solana OS, with mesh between three badges, !LAMPs and the system payment dialog. Click a badge and use <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd>, <kbd>Enter</kbd> SELECT and <kbd>Esc</kbd> CANCEL. <kbd>Tab</kbd> switches badge. Text is typed on the on-screen keyboard, as on the badge: arrows to choose, SELECT types, CANCEL deletes and ✓ confirms.</p>
+</header>
+<main id="main"><div id="boot">booting lua vm...</div></main>
+
+<script src="https://cdn.jsdelivr.net/npm/wasmoon@1.16.0/dist/index.js"></script>
+<script>
+const SIM = ["badge.lua", "emu.lua"];
+const THEME = {text: "#ffffff", dim: "#8e8e93", bg: "#000000", panel: "#1c1c1e", border: "#3a3a3c", purple: "#9945ff", green: "#14f195",
+  pink: "#f087ff", lpurple: "#c4a1ff", blue: "#4aa3ff", aqua: "#19fbe3", lime: "#b5f05a", yellow: "#ffd23f", orange: "#ff9f43"};
+const SANS = "Inter, ui-sans-serif, sans-serif", MONO = '"JetBrains Mono", ui-monospace, monospace';
+const FONT = {12: `12px ${MONO}`, 14: `14px ${SANS}`, 20: `500 20px ${SANS}`, 32: `500 32px ${SANS}`};
+const LEDS = [[168, 46], [205, 46], [242, 46], [279, 46], [316, 46], [353, 46], [458, 190], [458, 398]];
+const KEYS = {ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", Enter: "select", " ": "select", Escape: "back", Backspace: "back"};
+const KB_ROWS = [["1234567890", "qwertyuiop", "asdfghjkl@", "zxcvbnm,.-"], ["1234567890", "QWERTYUIOP", "ASDFGHJKL@", "ZXCVBNM,.-"],
+  ["1234567890", "!?#$%&*()'", "+=/:;\"<>_~", "[]{}^|\\,.-"]];
+const BUTTONS = [["up", 150, 560], ["left", 96, 614], ["right", 204, 614], ["down", 150, 668], ["back", 424, 588, "CANCEL"], ["select", 344, 652]];
+const arr = v => Array.isArray(v) ? v : v ? Object.values(v) : [];
+const hex = c => "#" + (c >>> 0).toString(16).padStart(6, "0");
+const paint = c => typeof c === "number" ? hex(c) : THEME[c] || THEME.text;
+
+let emu, appName = "APP", focus = 0, last = [], rigs = [];
+
+function boardSvg(i) {
+  const leds = LEDS.map(([x, y], j) => {
+    const side = j > 5;
+    const tag = `<text x="${x + 6}" y="${y - 8}" class="silk">D${j + 3}</text>`;
+    const pill = side
+      ? `<rect x="${x - 2}" y="${y + 16}" width="16" height="22" rx="3" fill="#e6e6e9"/><text x="${x + 6}" y="${y + 27}" class="pill" transform="rotate(90 ${x + 6} ${y + 27})">RGB</text>`
+      : `<rect x="${x - 4}" y="${y + 16}" width="20" height="10" rx="3" fill="#e6e6e9"/><text x="${x + 6}" y="${y + 24}" class="pill">RGB</text>`;
+    return `${tag}<rect class="led" data-led="${j}" x="${x}" y="${y}" width="12" height="12" rx="2" fill="#e9e9ec" stroke="#b9b9bf"/>${pill}`;
+  }).join("");
+  const buttons = BUTTONS.map(([k, x, y, name]) => `<g class="btn" data-k="${k}">
+      <circle cx="${x}" cy="${y}" r="27" fill="transparent"/>
+      <circle cx="${x}" cy="${y}" r="22" fill="#0e0e10" stroke="#2b2b30" stroke-width="2"/>
+      <circle class="cap" cx="${x}" cy="${y}" r="11" fill="#1b1b1f"/>
+      <rect x="${x + 22}" y="${y - 26}" width="9" height="9" fill="#c9a24b"/>
+      <g transform="translate(${x + 8} ${y + 34}) rotate(-58)"><rect x="-5" y="-8" width="${(name || k).length * 6.2 + 10}" height="14" rx="7" fill="#ececef"/><text x="0" y="2.5" class="tag">${(name || k).toUpperCase()}</text></g>
+    </g>`).join("");
+  return `<svg class="board" viewBox="0 0 520 746" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="edge${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f6d5d"/><stop offset=".55" stop-color="#2a2a3a"/><stop offset="1" stop-color="#6a3fb0"/></linearGradient>
+      <linearGradient id="pcb${i}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#121214"/><stop offset="1" stop-color="#08080a"/></linearGradient>
+      <linearGradient id="mark${i}" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#ffffff"/></linearGradient>
+      <style>.silk{font:600 9px ${MONO};fill:#d9d9dc;text-anchor:middle}.pill{font:700 6.5px ${MONO};fill:#111;text-anchor:middle}.tag{font:700 9px ${MONO};fill:#111}</style>
+    </defs>
+    <rect class="edge" x="4" y="4" width="512" height="738" rx="46" fill="url(#pcb${i})" stroke="url(#edge${i})" stroke-width="2.5"/>
+    <rect x="44" y="34" width="80" height="26" rx="13" fill="#000" stroke="#1d1d22"/>
+    <rect x="396" y="34" width="80" height="26" rx="13" fill="#000" stroke="#1d1d22"/>
+    ${leds}
+    <g transform="translate(174 92)">
+      <path d="M8 0h40l-8 8H0zM0 15h40l8 8H8zM8 30h40l-8 8H0z" fill="#fff"/>
+      <text x="62" y="35" style="font:800 40px ${SANS};letter-spacing:4px;fill:#fff">SOLANA</text>
+    </g>
+    <rect x="54" y="158" width="384" height="286" rx="6" fill="#f2f2f3"/>
+    <rect x="61" y="165" width="370" height="272" rx="3" fill="#050506"/>
+    <rect x="70" y="206" width="7" height="186" rx="2" fill="#b8913c"/>
+    <foreignObject x="102" y="181" width="320" height="240"><div xmlns="http://www.w3.org/1999/xhtml" style="position:relative;width:320px;height:240px"><canvas class="lcd" width="640" height="480"></canvas></div></foreignObject>
+    <circle cx="460" cy="278" r="3" fill="none" stroke="#5a5a62"/>
+    <circle cx="460" cy="298" r="3" fill="none" stroke="#5a5a62"/>
+    <circle cx="460" cy="330" r="3" fill="none" stroke="#5a5a62"/>
+    ${buttons}
+  </svg>`;
+}
+
+function build() {
+  const main = document.getElementById("main");
+  main.innerHTML = "";
+  for (let i = 0; i < 3; i++) {
+    const rig = document.createElement("div");
+    rig.className = "rig";
+    rig.innerHTML = `<div class="who"></div>${boardSvg(i)}<div class="tools"><label><input type="checkbox" checked> Wi-Fi</label><button>Close and reopen the app</button></div>`;
+    main.appendChild(rig);
+    const svg = rig.querySelector("svg"), canvas = rig.querySelector("canvas");
+    const r = {id: ["MIG001", "ALX002", "SAR003"][i], svg, who: rig.querySelector(".who"), ctx: canvas.getContext("2d"),
+      leds: [...rig.querySelectorAll(".led")], key: "", kb: null,
+      buttons: Object.fromEntries([...rig.querySelectorAll(".btn")].map(b => [b.dataset.k, b]))};
+    r.ctx.scale(2, 2);
+    svg.addEventListener("pointerdown", () => setFocus(i));
+    rig.querySelectorAll(".btn").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); press(i, b.dataset.k); }));
+    rig.querySelector("input").addEventListener("change", e => emu.online(r.id, e.target.checked));
+    rig.querySelector("button").addEventListener("click", () => emu.relaunch(r.id));
+    rigs.push(r);
+  }
+  const log = document.createElement("section");
+  log.className = "console";
+  log.innerHTML = `<h2>Console · mesh, payments, errors</h2><div id="log"></div>`;
+  main.appendChild(log);
+  setFocus(0);
+}
+
+function setFocus(i) {
+  focus = i;
+  rigs.forEach((r, j) => r.svg.classList.toggle("focus", j === i));
+}
+
+function press(i, k, rep) {
+  setFocus(i);
+  const b = rigs[i].buttons[k];
+  if (b) {
+    b.classList.add("down");
+    setTimeout(() => b.classList.remove("down"), 120);
+  }
+  const st = last[i];
+  if (!st) return;
+  if (st.pay) return (k === "select" || k === "back") && emu.pay(st.id, k === "select");
+  if (!st.kb) return emu.key(st.id, k, !!rep);
+  const kb = rigs[i].kb;
+  if (kb) type(st.id, kb, k);
+}
+
+function type(id, kb, k) {
+  const bottom = kb.row === 4;
+  if (k === "up" || k === "down") kb.row = (kb.row + (k === "up" ? 4 : 1)) % 5;
+  else if (k === "left" || k === "right") kb.col = bottom ? ((kb.col & ~1) + (k === "left" ? 8 : 2)) % 10 : (kb.col + (k === "left" ? 9 : 1)) % 10;
+  else if (k === "back") kb.text ? kb.text = kb.text.slice(0, -1) : emu.type(id, false);
+  else if (k !== "select") return;
+  else if (!bottom) kb.text = (kb.text + KB_ROWS[kb.set][kb.row][kb.col]).slice(0, kb.max);
+  else [() => kb.set = kb.set === 1 ? 0 : 1, () => kb.set = kb.set === 2 ? 0 : 2, () => kb.text = (kb.text + " ").slice(0, kb.max),
+    () => kb.text = kb.text.slice(0, -1), () => emu.type(id, kb.text)][kb.col >> 1]();
+}
+
+addEventListener("keydown", e => {
+  if (e.key === "Tab") {
+    e.preventDefault();
+    return setFocus((focus + 1) % rigs.length);
+  }
+  const k = KEYS[e.key];
+  if (!k) return;
+  e.preventDefault();
+  press(focus, k, e.repeat);
+});
+
+function wrap(ctx, s, w) {
+  const out = [];
+  for (const para of String(s).split("\n")) {
+    let line = "";
+    for (const word of para.split(" ")) {
+      const next = line ? line + " " + word : word;
+      if (w && ctx.measureText(next).width > w && line) {
+        out.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+function box(ctx, x, y, w, h, r, fill) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+
+function write(ctx, s, x, y, font, fill, w, align) {
+  ctx.font = font;
+  ctx.fillStyle = fill;
+  ctx.textBaseline = "top";
+  const size = parseInt(font.match(/(\d+)px/)[1], 10);
+  wrap(ctx, s, w).forEach((line, i) => {
+    const lw = ctx.measureText(line).width;
+    const dx = align === "center" && w ? (w - lw) / 2 : align === "right" && w ? w - lw : 0;
+    ctx.fillText(line, x + dx, y + i * Math.round(size * 1.22));
+  });
+}
+
+function status(ctx, st) {
+  const grad = ctx.createLinearGradient(0, 0, 320, 0);
+  grad.addColorStop(0, "#9945ff");
+  grad.addColorStop(.5, "#19fbe3");
+  grad.addColorStop(1, "#14f195");
+  const mark = ctx.createLinearGradient(6, 18, 22, 4);
+  mark.addColorStop(0, "#9945ff");
+  mark.addColorStop(1, "#14f195");
+  ctx.fillStyle = mark;
+  for (const [y, flip] of [[5, 0], [10, 1], [15, 0]]) {
+    ctx.beginPath();
+    ctx.moveTo(flip ? 6 : 9, y);
+    ctx.lineTo(flip ? 19 : 22, y);
+    ctx.lineTo(flip ? 22 : 19, y + 3);
+    ctx.lineTo(flip ? 9 : 6, y + 3);
+    ctx.fill();
+  }
+  write(ctx, st.running ? appName : "Solana OS", 28, 3, `500 15px ${SANS}`, "#fff");
+  ctx.strokeStyle = st.online ? "#fff" : "#666";
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = "round";
+  for (const r of [7, 4]) {
+    ctx.beginPath();
+    ctx.arc(250, 16, r, Math.PI * 1.25, Math.PI * 1.75);
+    ctx.stroke();
+  }
+  box(ctx, 249, 14, 2.6, 2.6, 1.3, st.online ? "#fff" : "#666");
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(264.5, 6.5, 16, 9);
+  box(ctx, 266, 8, 11, 6, 1, "#fff");
+  box(ctx, 281, 9, 1.6, 3.6, .6, "#fff");
+  write(ctx, "86%", 286, 4, `13px ${SANS}`, "#fff");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 22, 320, 2);
+}
+
+function list(ctx, o) {
+  const rows = arr(o.rows), sel = o.sel || 0, top = Math.max(0, (sel - 1) * 36 - (o.h - 36));
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(o.x, o.y, o.w, o.h);
+  ctx.clip();
+  rows.forEach((row, j) => {
+    const [title, sub, right] = arr(row), y = o.y + j * 36 - top;
+    if (y > o.y + o.h || y + 36 < o.y) return;
+    if (j + 1 === sel) {
+      box(ctx, o.x, y, o.w, 36, 0, "#1c1c1e");
+      ctx.fillStyle = THEME.green;
+      ctx.fillRect(o.x, y, 3, 36);
+    }
+    const rw = right ? (ctx.font = `12px ${SANS}`, ctx.measureText(right).width) : 0;
+    write(ctx, title, o.x + 12, y + (sub ? 3 : 10), `14px ${SANS}`, "#fff");
+    if (sub) write(ctx, sub, o.x + 12, y + 20, `12px ${SANS}`, THEME.dim);
+    if (right) write(ctx, right, o.x + o.w - 10 - rw, y + 5, `12px ${SANS}`, THEME.dim);
+  });
+  ctx.restore();
+}
+
+function dialog(ctx, title, body, keys) {
+  ctx.fillStyle = "rgba(0,0,0,.62)";
+  ctx.fillRect(0, 24, 320, 216);
+  ctx.font = `14px ${SANS}`;
+  const lines = wrap(ctx, body, 256), h = 44 + lines.length * 17 + (title ? 18 : 0);
+  const y = 24 + (216 - h) / 2;
+  box(ctx, 18, y, 284, h, 8, "#1c1c1e");
+  ctx.strokeStyle = title ? THEME.green : "#3a3a3c";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(18.5, y + .5, 283, h - 1, 8);
+  ctx.stroke();
+  let ty = y + 12;
+  if (title) {
+    write(ctx, title, 30, ty, `500 12px ${MONO}`, THEME.green);
+    ty += 18;
+  }
+  write(ctx, body, 30, ty, `14px ${SANS}`, "#fff", 256);
+  write(ctx, keys, 30, y + h - 20, `11px ${MONO}`, THEME.dim);
+}
+
+function render(r, st) {
+  const ctx = r.ctx;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, 320, 240);
+  status(ctx, st);
+  if (st.crash) return write(ctx, "Script error\n\n" + st.crash, 12, 40, `12px ${MONO}`, "#ff6b81", 296);
+  if (!st.running) return write(ctx, "App closed", 0, 120, `14px ${SANS}`, THEME.dim, 320, "center");
+  if (r.kb) return keys(ctx, r.kb);
+  ctx.save();
+  ctx.translate(0, 22);
+  for (const o of arr(st.objs)) {
+    const opt = o.o || {};
+    if (o.k === "label") write(ctx, o.t, o.x, o.y, FONT[opt.size] || FONT[14], paint(o.col ?? opt.color), opt.w, opt.align);
+    else if (o.k === "rect") box(ctx, o.x, o.y, o.w, o.h, opt.radius || 0, paint(o.col ?? opt.color ?? "panel"));
+    else if (o.k === "bar") {
+      box(ctx, o.x, o.y, o.w, o.h, o.h / 2, "#2c2c30");
+      const g = ctx.createLinearGradient(o.x, 0, o.x + o.w, 0);
+      g.addColorStop(0, "#9945ff");
+      g.addColorStop(1, "#19fbe3");
+      if (o.v > 0) box(ctx, o.x, o.y, Math.max(o.h, o.w * o.v / 100), o.h, o.h / 2, g);
+    } else if (o.k === "list") list(ctx, o);
+  }
+  if (st.hint) {
+    ctx.fillStyle = "#1c1c1e";
+    ctx.fillRect(0, 202, 320, 16);
+    write(ctx, st.hint, 6, 203, `11px ${MONO}`, "#c7c7cc");
+  }
+  ctx.restore();
+  if (st.toast) {
+    ctx.font = `13px ${SANS}`;
+    const w = Math.min(290, ctx.measureText(st.toast).width + 24);
+    box(ctx, 160 - w / 2, 186, w, 26, 6, "#2c2c30");
+    write(ctx, st.toast, 160 - w / 2, 192, `13px ${SANS}`, "#fff", w, "center");
+  }
+  if (st.modal) dialog(ctx, null, st.modal, "SELECT yes   CANCEL no");
+  if (st.pay) {
+    const [amount, to] = arr(st.pay);
+    dialog(ctx, "CONFIRM PAYMENT", `Send ${amount} !LAMPs\nto badge ${to}\nfrom ${appName}`, "SELECT pay   CANCEL cancel");
+  }
+}
+
+function keyboard(r, st) {
+  const want = st.kb && arr(st.kb);
+  if (!want) r.kb = null;
+  else if (!r.kb) r.kb = {title: want[0], max: want[1], text: "", row: 1, col: 0, set: 0};
+}
+
+function keys(ctx, kb) {
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 22, 320, 218);
+  write(ctx, kb.title, 8, 27, `12px ${SANS}`, THEME.dim);
+  box(ctx, 6, 42, 308, 27, 4, "#111114");
+  ctx.strokeStyle = THEME.purple;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(6.5, 42.5, 307, 26, 4);
+  ctx.stroke();
+  write(ctx, kb.text + "_", 14, 48, `14px ${SANS}`, "#fff");
+  const rows = KB_ROWS[kb.set], bottom = [kb.set === 1 ? "abc" : "ABC", kb.set === 2 ? "abc" : "#+=", "space", "⌫", "✓"];
+  for (let row = 0; row < 5; row++) {
+    const labels = row < 4 ? rows[row] : bottom, pitch = row < 4 ? 31.5 : 63, w = row < 4 ? 28 : 60;
+    for (let c = 0; c < labels.length; c++) {
+      const on = kb.row === row && (row < 4 ? kb.col === c : kb.col >> 1 === c), x = 4 + c * pitch, y = 75 + row * 30;
+      box(ctx, x, y, w, 26, 4, on ? "#7ee2a4" : "#1c1c1e");
+      write(ctx, labels[c], x, y + 6, `13px ${MONO}`, on ? "#0b0b0d" : "#fff", w, "center");
+    }
+  }
+  ctx.fillStyle = "#1c1c1e";
+  ctx.fillRect(0, 224, 320, 16);
+  write(ctx, "SELECT type   CANCEL delete / close", 6, 225, `11px ${MONO}`, "#c7c7cc");
+}
+
+function frame() {
+  emu.step(50);
+  const s = JSON.parse(emu.state());
+  last = arr(s.badges);
+  last.forEach((st, i) => {
+    const r = rigs[i];
+    arr(st.leds).forEach((c, j) => {
+      const el = r.leds[j];
+      el.setAttribute("fill", c ? hex(c) : "#e9e9ec");
+      el.style.filter = c ? `drop-shadow(0 0 6px ${hex(c)}) drop-shadow(0 0 14px ${hex(c)}aa)` : "";
+    });
+    r.who.innerHTML = `<b>${st.owner}</b> · ${st.id} · ${st.lamps} !LAMPs`;
+    keyboard(r, st);
+    const key = JSON.stringify([st.objs, st.hint, st.toast, st.modal, st.pay, st.crash, st.running, st.online, r.kb]);
+    if (key !== r.key) {
+      r.key = key;
+      render(r, st);
+    }
+  });
+  const log = document.getElementById("log"), text = arr(s.log).join("\n");
+  if (log.textContent !== text) {
+    const end = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
+    log.textContent = text;
+    if (end) log.scrollTop = log.scrollHeight;
+  }
+}
+
+async function boot() {
+  const factory = new wasmoon.LuaFactory("https://cdn.jsdelivr.net/npm/wasmoon@1.16.0/dist/glue.wasm");
+  const bust = "?v=" + Date.now();
+  const files = await (await fetch("files.json" + bust)).json();
+  for (const f of files) await factory.mountFile("/app/" + f, await (await fetch("../rent-a-degen/" + f + bust)).text());
+  for (const f of SIM) await factory.mountFile("/sim/" + f, await (await fetch("../sim/" + f + bust)).text());
+  appName = (await (await fetch("../rent-a-degen/app.json" + bust)).json()).name;
+  await document.fonts.ready;
+  const lua = await factory.createEngine();
+  await lua.doFile("/sim/emu.lua");
+  const g = n => lua.global.get(n);
+  emu = {step: g("emu_step"), key: g("emu_key"), type: g("emu_type"), pay: g("emu_pay"), relaunch: g("emu_relaunch"),
+    online: g("emu_online"), state: g("emu_state")};
+  build();
+  setInterval(frame, 50);
+}
+
+boot().catch(e => {
+  document.getElementById("boot").textContent = "Failed: " + e;
+  console.error(e);
+});
+</script>
+</body>
+</html>
